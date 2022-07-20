@@ -1,52 +1,36 @@
-from dronekit import connect, VehicleMode, LocationGlobalRelative
 from pymavlink import mavutil
 import time
+# Start a connection listening to a UDP port
+the_connection = mavutil.mavlink_connection('127.0.0.1:14550')
 
+# Wait for the first heartbeat
+#   This sets the system and component ID of remote system for the link
+the_connection.wait_heartbeat()
+print("Heartbeat from system (system %u component %u)" %
+      (the_connection.target_system, the_connection.target_component))
 
-vehicle = connect("/dev/ttyAMA0", baud=921600, wait_ready=True)
+the_connection.mav.command_long_send(the_connection.target_system, the_connection.target_component,
+                                         mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
 
-# 921600 is the baudrate that you have set in the mission plannar or qgc
+mode = 'GUIDED'
+mode_id = the_connection.mode_mapping()[mode]
+the_connection.mav.set_mode_send(
+    the_connection.target_system,
+    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+    mode_id)
 
-# Function to arm and then takeoff to a user specified altitude
-def arm_and_takeoff(aTargetAltitude):
-    print("Basic pre-arm checks")
-    # Don't let the user try to arm until autopilot is ready
-    while not vehicle.is_armable:
-        print(" Waiting for vehicle to initialise...")
-        time.sleep(1)
+the_connection.mav.command_long_send(the_connection.target_system, the_connection.target_component,
+                                     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, 10)
 
-    print("Arming motors")
-    # Copter should arm in GUIDED mode
-    vehicle.mode = VehicleMode("GUIDED")
-    vehicle.armed = True
+konum_lat = the_connection.location().lat
+konum_lng = the_connection.location().lng
+konum_alt = the_connection.location().alt
 
-    while not vehicle.armed:
-        print(" Waiting for arming...")
-        time.sleep(1)
+while True:
+    son_konum_alt = the_connection.location().alt
+    if (son_konum_alt-konum_alt)<11 and 9<(son_konum_alt-konum_alt):
+        break
 
-    print("Taking off!")
-    vehicle.simple_takeoff(aTargetAltitude)  # Take off to target altitude
+print("Gereken yukseklige ulasildi")
 
-    # Check that vehicle has reached takeoff altitude
-    while True:
-        print(" Altitude: ", vehicle.location.global_relative_frame.alt)
-        # Break and return from function just below target altitude.
-        if vehicle.location.global_relative_frame.alt >= aTargetAltitude * 0.95:
-            print("Reached target altitude")
-            break
-        time.sleep(1)
-
-
-# Initialize the takeoff sequence to 15m
-arm_and_takeoff(10)
-
-print("Take off complete")
-
-# Hover for 10 seconds
-time.sleep(15)
-
-print("Now let's land")
-vehicle.mode = VehicleMode("LAND")
-
-# Close vehicle object
-vehicle.close()
+the_connection.set_mode_rtl()
